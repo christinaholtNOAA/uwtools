@@ -39,6 +39,8 @@ def write_rocoto_xml(input_yaml: str, input_template: str, rendered_output: str)
     if isinstance(tasks, dict):
         _add_jobname(tasks)
 
+    values.dereference_all()
+
     # Render the template.
     template = J2Template(values=values.data, template_path=input_template)
     template.dump(output_path=rendered_output)

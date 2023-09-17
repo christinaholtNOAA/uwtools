@@ -27,6 +27,8 @@ from uwtools.types import DefinitePath, OptionalPath
 from uwtools.utils.file import FORMAT, get_file_type, readable, writable
 
 INCLUDE_TAG = "!INCLUDE"
+STARTSTOPFREQ_TAG = "!startstopfreq"
+CYCLESTR_TAG = "!cycstr"
 MSGS = ns(
     unhashable="""
 ERROR:
@@ -221,7 +223,9 @@ class Config(ABC, UserDict):
                         templates = [v_str]
                     else:
                         # Separate out all the double curly bracket pairs.
-                        templates = re.findall(r"{{[^}]*}}|\S", v_str)
+                        templates = [m.group() for m in
+                            re.finditer(r"{{[^}]*}}|\S", v_str)  if '{{'
+                            in m.group()]
                     data = []
                     for template in templates:
                         # Creating the config object for the template like this, gives us access to
@@ -265,9 +269,13 @@ class Config(ABC, UserDict):
                             msg = f"{func_name}: {tmpl} raised {err}"
                             logging.debug(msg)
 
+                    for tmpl, rendered in zip(templates, data):
+                        v_str = v_str.replace(tmpl, rendered)
+
                     # Put the full template line back together as it was, filled or not, and make a
                     # guess on its intended type.
-                    ref_dict[key] = self.reify_scalar_str("".join(data))
+                    
+                    ref_dict[key] = self.reify_scalar_str(v_str)
 
     def dereference_all(self) -> None:
         """
@@ -342,7 +350,8 @@ class Config(ABC, UserDict):
             r = yaml.safe_load(s)
         except yaml.YAMLError:
             return s
-        return s if type(r) in [dict, list] else r
+        #return s if type(r) in [dict, list] else r
+        return r
 
     def update_values(self, src: Union[dict, Config], dst: Optional[Config] = None):
         """
@@ -553,6 +562,19 @@ class YAMLConfig(Config):
         filepaths = loader.construct_sequence(node)
         return self._load_paths(filepaths)
 
+    def _cyclestr(self, loader: yaml.Loader, node: yaml.SequenceNode) -> str:
+
+        args = loader.construct_sequence(node)
+        if len(args) == 1:
+            return f"<cyclestr>{args[0]}</cyclestr>"
+        if len(args) == 2:
+            return f"<cyclestr offset={args[1]}>{args[0]}</cyclestr>"
+
+    def _startstopfreq(self, loader: yaml.Loader, node: yaml.SequenceNode) -> str:
+
+        start, stop, freq = loader.construct_sequence(node)
+        return f"{start} {stop} {freq}"
+        
     @property
     def _yaml_loader(self) -> type[yaml.SafeLoader]:
         """
@@ -560,6 +582,8 @@ class YAMLConfig(Config):
         """
         loader = yaml.SafeLoader
         loader.add_constructor(INCLUDE_TAG, self._yaml_include)
+        loader.add_constructor(CYCLESTR_TAG, self._cyclestr)
+        loader.add_constructor(STARTSTOPFREQ_TAG, self._startstopfreq)
         return loader
 
     # Public methods

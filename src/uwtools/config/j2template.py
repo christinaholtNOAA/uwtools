@@ -111,6 +111,8 @@ def path_join(path_components: List[str]) -> str:
     """
     return os.path.join(*path_components)
 
+def datetime_format(value, format="%Y%m%d%H%M"):
+    return value.strftime(format)
 
 # Private functions
 
@@ -122,3 +124,4 @@ def _register_filters(j2env: Environment) -> None:
     :param j2env: The Jinja2 Environment with which to register filters.
     """
     j2env.filters["path_join"] = path_join
+    j2env.filters["strftime"] = datetime_format
