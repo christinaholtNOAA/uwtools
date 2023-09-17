@@ -288,7 +288,7 @@ class Config(ABC, UserDict):
             prev = copy.deepcopy(self.data)
 
     @abstractmethod
-    def dump(self, path: DefinitePath) -> None:
+    def dump(self, path: OptionalPath) -> None:
         """
         Dumps the config as a file.
 
@@ -436,7 +436,7 @@ class INIConfig(Config):
 
     # Public methods
 
-    def dump(self, path: DefinitePath) -> None:
+    def dump(self, path: OptionalPath) -> None:
         """
         Dumps the config as an INI file.
 
@@ -488,7 +488,7 @@ class NMLConfig(Config):
 
     # Public methods
 
-    def dump(self, path: DefinitePath) -> None:
+    def dump(self, path: OptionalPath) -> None:
         """
         Dumps the config as a Fortran namelist file.
 
@@ -588,7 +588,7 @@ class YAMLConfig(Config):
 
     # Public methods
 
-    def dump(self, path: DefinitePath) -> None:
+    def dump(self, path: OptionalPath) -> None:
         """
         Dumps the config as a YAML file.
 
@@ -617,7 +617,7 @@ class FieldTableConfig(YAMLConfig):
 
     # Public methods
 
-    def dump(self, path: DefinitePath) -> None:
+    def dump(self, path: OptionalPath) -> None:
         """
         Dumps the config as a Field Table file.
 

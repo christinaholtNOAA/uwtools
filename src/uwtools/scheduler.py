@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
 from collections import UserDict, UserList
 from collections.abc import Mapping
 from typing import Any, Dict, List
 
+from uwtools.types import OptionalPath
 from uwtools.utils import Memory
+from uwtools.utils.file import writable
 
 NONEISH = [None, "", " ", "None", "none", False]
 IGNORED_ATTRIBS = ["scheduler"]
@@ -22,10 +25,10 @@ class RequiredAttribs:
     """
 
     ACCOUNT = "account"
-    QUEUE = "queue"
-    WALLTIME = "walltime"
     NODES = "nodes"
+    QUEUE = "queue"
     TASKS_PER_NODE = "tasks_per_node"
+    WALLTIME = "walltime"
 
 
 class OptionalAttribs:
@@ -33,17 +36,20 @@ class OptionalAttribs:
     Key for optional attributes.
     """
 
-    SHELL = "shell"
-    JOB_NAME = "jobname"
-    STDOUT = "stdout"
-    STDERR = "stderr"
-    JOIN = "join"
-    PARTITION = "partition"
-    THREADS = "threads"
-    MEMORY = "memory"
+    CORES = "cores"
     DEBUG = "debug"
     EXCLUSIVE = "exclusive"
+    JOB_NAME = "jobname"
+    JOIN = "join"
+    MEMORY = "memory"
+    NODES = "nodes"
+    PARTITION = "partition"
     PLACEMENT = "placement"
+    SHELL = "shell"
+    STDERR = "stderr"
+    STDOUT = "stdout"
+    TASKS_PER_NODE = "tasks_per_node"
+    THREADS = "threads"
 
 
 class BatchScript(UserList):
@@ -68,6 +74,16 @@ class BatchScript(UserList):
             The character or characters to join the content lines with
         """
         return line_separator.join(self)
+
+    @staticmethod
+    def dump(contents: str, output_file: OptionalPath) -> None:
+        """
+        Write a batch script to an output location.
+
+        :param output_file: Path to the file to write the batch script to
+        """
+        with writable(output_file) as f:
+            print(str(contents).strip(), file=f)
 
 
 class JobScheduler(UserDict):
@@ -178,6 +194,17 @@ class JobScheduler(UserDict):
             ) from error
         return scheduler(props)
 
+    def run_job(self, script_path: OptionalPath) -> None:
+        """
+        Submits a job to the scheduler.
+        """
+        subprocess.run(
+            f"{self.submit_command} {script_path}",
+            stderr=subprocess.STDOUT,
+            check=False,
+            shell=True,
+        )
+
 
 class Slurm(JobScheduler):
     """
@@ -185,28 +212,23 @@ class Slurm(JobScheduler):
     """
 
     prefix = "#SBATCH"
+    submit_command = "sbatch"
 
     _map = {
         RequiredAttribs.ACCOUNT: "--account",
-        RequiredAttribs.NODES: "--nodes",
         RequiredAttribs.QUEUE: "--qos",
-        RequiredAttribs.TASKS_PER_NODE: "--ntasks-per-node",
         RequiredAttribs.WALLTIME: "--time",
-        OptionalAttribs.JOB_NAME: "--job-name",
-        OptionalAttribs.STDOUT: "--output",
-        OptionalAttribs.STDERR: "--error",
-        OptionalAttribs.PARTITION: "--partition",
-        OptionalAttribs.THREADS: "--cpus-per-task",
-        OptionalAttribs.MEMORY: "--mem",
+        OptionalAttribs.CORES: "--ntasks",
         OptionalAttribs.EXCLUSIVE: "--exclusive",
+        OptionalAttribs.JOB_NAME: "--job-name",
+        OptionalAttribs.MEMORY: "--mem",
+        OptionalAttribs.NODES: "--nodes",
+        OptionalAttribs.PARTITION: "--partition",
+        OptionalAttribs.STDERR: "--error",
+        OptionalAttribs.STDOUT: "--output",
+        OptionalAttribs.TASKS_PER_NODE: "--ntasks-per-node",
+        OptionalAttribs.THREADS: "--cpus-per-task",
     }
-
-    @property
-    def submit_command(self) -> str:
-        """
-        Returns the command for running a batch script.
-        """
-        return "sbatch"
 
 
 class PBS(JobScheduler):
@@ -216,27 +238,21 @@ class PBS(JobScheduler):
 
     prefix = "#PBS"
     key_value_separator = " "
+    submit_command = "qsub"
 
     _map = {
         RequiredAttribs.ACCOUNT: "-A",
         RequiredAttribs.NODES: lambda x: f"-l select={x}",
         RequiredAttribs.QUEUE: "-q",
-        RequiredAttribs.WALLTIME: "-l walltime=",
         RequiredAttribs.TASKS_PER_NODE: "mpiprocs",
-        OptionalAttribs.SHELL: "-S",
-        OptionalAttribs.JOB_NAME: "-N",
-        OptionalAttribs.STDOUT: "-o",
+        RequiredAttribs.WALLTIME: "-l walltime=",
         OptionalAttribs.DEBUG: lambda x: f"-l debug={str(x).lower()}",
-        OptionalAttribs.THREADS: "ompthreads",
+        OptionalAttribs.JOB_NAME: "-N",
         OptionalAttribs.MEMORY: "mem",
+        OptionalAttribs.SHELL: "-S",
+        OptionalAttribs.STDOUT: "-o",
+        OptionalAttribs.THREADS: "ompthreads",
     }
-
-    @property
-    def submit_command(self) -> str:
-        """
-        Returns the command for running a batch script.
-        """
-        return "qsub"
 
     def pre_process(self) -> Dict[str, Any]:
         output = self.data
@@ -308,26 +324,20 @@ class LSF(JobScheduler):
 
     prefix = "#BSUB"
     key_value_separator = " "
+    submit_command = "bsub"
 
     _map = {
-        RequiredAttribs.QUEUE: "-q",
         RequiredAttribs.ACCOUNT: "-P",
-        RequiredAttribs.WALLTIME: "-W",
         RequiredAttribs.NODES: lambda x: f"-n {x}",
+        RequiredAttribs.QUEUE: "-q",
         RequiredAttribs.TASKS_PER_NODE: lambda x: f"-R span[ptile={x}]",
-        OptionalAttribs.SHELL: "-L",
+        RequiredAttribs.WALLTIME: "-W",
         OptionalAttribs.JOB_NAME: "-J",
+        OptionalAttribs.MEMORY: lambda x: f"-R rusage[mem={x}]",
+        OptionalAttribs.SHELL: "-L",
         OptionalAttribs.STDOUT: "-o",
         OptionalAttribs.THREADS: lambda x: f"-R affinity[core({x})]",
-        OptionalAttribs.MEMORY: lambda x: f"-R rusage[mem={x}]",
     }
-
-    @property
-    def submit_command(self) -> str:
-        """
-        Returns the command for running a batch script.
-        """
-        return "bsub"
 
     def pre_process(self) -> Dict[str, Any]:
         items = self.data
