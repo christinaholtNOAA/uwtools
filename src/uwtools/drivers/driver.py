@@ -2,6 +2,7 @@
 Provides an abstract class representing drivers for various NWP tools.
 """
 
+import glob
 import logging
 import os
 import shutil
@@ -99,7 +100,7 @@ class Driver(ABC):
 
     @staticmethod
     def stage_files(
-        run_directory: str, files_to_stage: Dict[str, str], link_files: bool = False
+        run_directory: Path, files_to_stage: Dict[str, str], link_files: bool = False
     ) -> None:
         """
         Creates destination files in run directory and copies or links contents from the source path
@@ -113,11 +114,16 @@ class Driver(ABC):
         link_or_copy = os.symlink if link_files else shutil.copyfile
 
         for dst_fn, src_path in files_to_stage.items():
-            dst_path = os.path.join(run_directory, dst_fn)
+            dst_path = run_directory if dst_fn == "run_dir" else run_directory / dst_fn
             if isinstance(src_path, list):
+                expanded_files_to_stage = {}
+                for src in src_path:
+                    paths = glob.glob(src)
+                    globbed_files = {os.path.basename(p): p for p in paths}
+                    expanded_files_to_stage.update(globbed_files)
                 Driver.stage_files(
-                    run_directory,
-                    {os.path.join(dst_path, os.path.basename(src)): src for src in src_path},
+                    dst_path,
+                    expanded_files_to_stage,
                     link_files,
                 )
                 continue
@@ -134,6 +140,27 @@ class Driver(ABC):
         The config object that describes the subset of an experiment config related to a subclass of
         Driver.
         """
+
+    def _create_run_direcotory(run_dir: DefinitePath, exist_act="delete"): -> None:
+
+        """
+        Makes the run directory for the driver. If it already exists, handles it based on the
+        caller instruction.
+        """
+        if exist_act not in ["delete", "rename", "quit"]:
+            raise ValueError(f"Bad argument: {exist_act}")
+
+        # Exit program with error if caller chooses to quit.
+
+        if exist_act == "quit" and os.path.isdir(run_directory):
+            logging.critical("User chose quit option when creating directory")
+            sys.exit(1)
+
+        # Delete or rename directory if it exists.
+        handle_existing(run_dir, exist_act) 
+
+        logging.info("Creating directory: %s", path)
+        os.makedirs(run_dir)
 
     @staticmethod
     def _create_user_updated_config(

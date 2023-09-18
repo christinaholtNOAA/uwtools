@@ -109,6 +109,19 @@ def path_if_it_exists(path: str) -> str:
         raise FileNotFoundError(msg)
     return str(p.absolute())
 
+@contextmanager
+def change_dir(path: Path) -> None:
+    """Sets a new working directory within the context
+
+    :param path: The path to change to.
+    """
+
+    origin = Path().absolute()
+    try:
+        os.chdir(path)
+        yield
+    finally:
+        os.chdir(origin)
 
 @contextmanager
 def readable(filepath: OptionalPath = None, mode: str = "r") -> Generator[IO, None, None]:
