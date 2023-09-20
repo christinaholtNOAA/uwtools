@@ -111,8 +111,8 @@ def path_join(path_components: List[str]) -> str:
     """
     return os.path.join(*path_components)
 
-def datetime_format(value, format="%Y%m%d%H%M"):
-    return value.strftime(format)
+def datetime_format(value, format_="%Y%m%d%H%M"):
+    return value.strftime(format_)
 
 # Private functions
 

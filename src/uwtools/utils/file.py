@@ -141,7 +141,7 @@ def readable(filepath: OptionalPath = None, mode: str = "r") -> Generator[IO, No
 @contextmanager
 def writable(filepath: OptionalPath = None, mode: str = "w") -> Generator[IO, None, None]:
     """
-    If a path to a file is specified, open it and return a writable handle; if not, return writeable
+    If a path to a file is specified, open it and return a writable handle; if not, return writable
     stdout.
 
     :param filepath: The path to a file to write to.

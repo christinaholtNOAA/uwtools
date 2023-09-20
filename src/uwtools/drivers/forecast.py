@@ -1,12 +1,12 @@
 """
 Drivers for forecast models.
 """
-
+import sys
 
 import logging
 import os
 import subprocess
-import sys
+from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from datetime import datetime
 from importlib import resources
@@ -14,12 +14,13 @@ from pathlib import Path
 from typing import Dict
 
 from uwtools.config.core import FieldTableConfig, NMLConfig, YAMLConfig
+from uwtools.config.j2template import J2Template
 from uwtools.drivers.driver import Driver
 from uwtools.scheduler import BatchScript
-from uwtools.types import Optional, OptionalPath
-from uwtools.utils.file import handle_existing, readable, change_dir
+from uwtools.types import Optional, OptionalPath, DefinitePath
+from uwtools.utils.file import readable, change_dir, writable
 
-class Forecast(Driver):
+class Forecast(Driver, ABC):
 
     def __init__(
         self,
@@ -32,6 +33,7 @@ class Forecast(Driver):
         """
 
         super().__init__(config_file=config_file, dry_run=dry_run, batch_script=batch_script)
+
 
     # Public methods
 
@@ -72,8 +74,8 @@ class Forecast(Driver):
         with readable(template_file) as f:
             template_str = f.read()
 
-        template = J2Template(values=values, template_str=template_str) 
-        with writeable(output_path) as f:
+        template = J2Template(values=values, template_str=template_str)
+        with writable(output_path) as f:
             print(template.render(), file=f)
 
     def output(self) -> None:
@@ -99,21 +101,45 @@ class Forecast(Driver):
 
     def run(self, cycle: datetime) -> None:
         """
+        Interface for running standard jobs.
+        :param cycle: The date/time stamp for the given time to run
+        """
+
+        self._run(cycle)
+
+    @abstractmethod
+    def _prepare_config_files(self, run_directory: DefinitePath) -> None:
+        """
+        Interface for subclasses preparing the group of configuration files needed for that
+        component.
+        """
+
+    def _run(self, cycle: datetime) -> None:
+        """
         Runs FV3 either as a subprocess or by submitting a batch script.
         """
-        run_dir = Path(self._config["run_dir"].format(cycle=self._cycle.strfmt("%Y%d%m%H")))
+        self._cycle = cycle
+        run_dir = Path(self._config["run_dir"].format(cycle=cycle.strftime("%Y%m%d%H")))
 
+        logging.info(f"Creating {run_dir}")
 
         # Prepare directories.
         self.create_directory_structure(run_dir.as_posix(), "delete")
 
-        if self._config.get("need_boundary_files", False):
-            self._config["cycle-dependent"].update(self._define_boundary_files())
+        cycle_dependent_files = self._config.get("cycle-dependent", {})
+        for src, dst in cycle_dependent_files.items():
+            cycle_dependent_files[src] = dst.format(cycle=cycle.strftime("%Y%m%d%H"),
+                    cycle_hr=cycle.strftime("%H"))
+
 
         for file_category in ["static", "cycle-dependent"]:
-            self.stage_files(run_dir, self._config.get(file_category, {}), link_files=True)
+            self.stage_files(
+                run_directory=run_dir,
+                files_to_stage=self._config.get(file_category, {}),
+                link_files=True
+            )
 
-        self._prepare_config_files()
+        self._prepare_config_files(run_dir)
 
         if self._batch_script is not None:
             batch_script = self.batch_script
@@ -219,6 +245,10 @@ class FV3Forecast(Forecast):
             output_path=output_path,
         )
 
+    def run(self, cycle: datetime) -> None:
+        if self._config.get("need_boundary_files", False):
+            self._config["cycle-dependent"].update(self._define_boundary_files())
+        self._run(cycle)
 
     @property
     def schema_file(self) -> str:
@@ -274,7 +304,7 @@ class FV3Forecast(Forecast):
         """
 
         self.create_field_table(run_directory / "field_table")
-        self.create_model_configure(run_direcotory / "model_configure")
+        self.create_model_configure(run_directory / "model_configure")
         self.create_namelist(run_directory / "input.nml")
 
 
@@ -303,6 +333,26 @@ class MPASForecast(Forecast):
         self.create_streams(run_directory / "streams.atmosphere")
         self.create_namelist(run_directory / "namelist.atmosphere")
 
+    def create_namelist(self, output_path: OptionalPath) -> None:
+        """
+        Uses an object with user supplied values and an optional namelist base file to create an
+        output namelist file. Will "dereference" the base file.
+
+        :param output_path: Optional location of output namelist.
+        """
+        self._create_user_updated_config(
+            config_class=NMLConfig,
+            config_values=self._config["namelist"],
+            output_path=output_path,
+        )
+        date_values = {
+            "nhyd_model": {
+                "config_start_time": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
+                },
+            }
+        config_obj = YAMLConfig(output_path)
+        config_obj.update_values(date_values)
+        config_obj.dump(output_path)
 
 class MPASInit(Forecast):
 
@@ -322,6 +372,34 @@ class MPASInit(Forecast):
 
         super().__init__(config_file=config_file, dry_run=dry_run, batch_script=batch_script)
 
+    def create_namelist(self, output_path: OptionalPath) -> None:
+        """
+        Uses an object with user supplied values and an optional namelist base file to create an
+        output namelist file. Will "dereference" the base file.
+
+        :param output_path: Optional location of output namelist.
+        """
+        self._create_user_updated_config(
+            config_class=NMLConfig,
+            config_values=self._config["namelist"],
+            output_path=output_path,
+        )
+        date_values = {
+            "nhyd_model": {
+                "config_start_time": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
+                "config_stop_time": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
+                },
+            }
+        config_obj = YAMLConfig(output_path)
+        config_obj.update_values(date_values)
+        config_obj.dump(output_path)
+
+    @property
+    def _config(self) -> Mapping:
+        """
+        The config object that describes the subset of an experiment config related to the
+        MPAS Init.
+        """
     @property
     def _config(self) -> Mapping:
         """
@@ -336,6 +414,11 @@ class MPASInit(Forecast):
         """
         self.create_streams(run_directory / "streams.init_atmosphere")
         self.create_namelist(run_directory / "namelist.init_atmosphere")
+
+    @property
+    def schema_file(self) -> str:
+        return ""
+
 
 
 
@@ -357,6 +440,28 @@ class Ungrib(Forecast):
 
         super().__init__(config_file=config_file, dry_run=dry_run, batch_script=batch_script)
 
+    def create_namelist(self, output_path: OptionalPath) -> None:
+        """
+        Uses an object with user supplied values and an optional namelist base file to create an
+        output namelist file. Will "dereference" the base file.
+
+        :param output_path: Optional location of output namelist.
+        """
+        self._create_user_updated_config(
+            config_class=NMLConfig,
+            config_values=self._config["namelist"],
+            output_path=output_path,
+        )
+        date_values = {
+            "share": {
+                "start_date": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
+                "end_date": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
+                },
+            }
+        config_obj = NMLConfig(output_path)
+        config_obj.update_values(date_values)
+        config_obj.dump(output_path)
+
     def run_cmd(self, *args) -> str:
         exec_name = self._config["exec_name"]
         return f"./{exec_name}"
@@ -373,12 +478,17 @@ class Ungrib(Forecast):
         """
         Collect all the configuration files needed for FV3
         """
-        self.create_namelist(run_directory / "namelist.init_atmosphere")
+        self.create_namelist(run_directory / "namelist.wps")
 
-
-    
+    @property
+    def schema_file(self) -> str:
+        return ""
 
 CLASSES = {
     "FV3": FV3Forecast,
     "MPAS": MPASForecast,
+    }
+INIT_CLASSES = {
+    "ungrib": Ungrib,
+    "ics": MPASInit,
     }

@@ -260,9 +260,25 @@ def _add_subparser_forecast(subparsers: Subparsers) -> ModeChecks:
     _basic_setup(parser)
     subparsers = _add_subparsers(parser, STR.submode)
     return {
+        STR.init: _add_subparser_forecast_init(subparsers),
         STR.run: _add_subparser_forecast_run(subparsers),
     }
 
+def _add_subparser_forecast_init(subparsers: Subparsers) -> SubmodeChecks:
+    """
+    Subparser for mode: forecast init
+
+    :param subparsers: Parent parser's subparsers, to add this subparser to.
+    """
+    parser = _add_subparser(subparsers, STR.init, "Initialize a forecast")
+    required = parser.add_argument_group(TITLE_REQ_ARG)
+    _add_arg_cycle(required)
+    _add_arg_config_file(required)
+    _add_arg_init_mode(required, choices=("ungrib", "ics"))
+    optional = _basic_setup(parser)
+    _add_arg_dry_run(optional)
+    checks = _add_args_quiet_and_verbose(optional)
+    return checks
 
 def _add_subparser_forecast_run(subparsers: Subparsers) -> SubmodeChecks:
     """
@@ -271,10 +287,11 @@ def _add_subparser_forecast_run(subparsers: Subparsers) -> SubmodeChecks:
     :param subparsers: Parent parser's subparsers, to add this subparser to.
     """
     parser = _add_subparser(subparsers, STR.run, "Run a forecast")
+    forecast_choices = uwtools.drivers.forecast.CLASSES.keys()
     required = parser.add_argument_group(TITLE_REQ_ARG)
     _add_arg_cycle(required)
     _add_arg_config_file(required)
-    _add_arg_model(required, choices=["FV3"])
+    _add_arg_model(required, choices=forecast_choices)
     optional = _basic_setup(parser)
     _add_arg_dry_run(optional)
     checks = _add_args_quiet_and_verbose(optional)
@@ -287,8 +304,23 @@ def _dispatch_forecast(args: Namespace) -> bool:
 
     :param args: Parsed command-line args.
     """
-    return {STR.run: _dispatch_forecast_run}[args.submode](args)
+    return {
+        STR.init: _dispatch_forecast_init,
+        STR.run: _dispatch_forecast_run,
+    }[args.submode](args)
 
+def _dispatch_forecast_init(args: Namespace) -> bool:
+    """
+    Dispatch logic for forecast initialization mode.
+
+    :param argws: Parsed command-line args.
+    """
+
+    init = uwtools.drivers.forecast.INIT_CLASSES[args.init_mode]
+    init(config_file=args.config_file, dry_run=args.dry_run).run(
+        cycle=args.cycle,
+    )
+    return True
 
 def _dispatch_forecast_run(args: Namespace) -> bool:
     """
@@ -375,7 +407,7 @@ def _add_arg_cycle(group: Group) -> None:
         "--cycle",
         help="The cycle in ISO8601 format",
         required=True,
-        type=datetime.date.fromisoformat,
+        type=datetime.datetime.fromisoformat,
     )
 
 
@@ -455,6 +487,16 @@ def _add_arg_model(group: Group, choices: List[str]) -> None:
         _switch(STR.model),
         choices=choices,
         help="Model name",
+        required=True,
+        type=str,
+    )
+
+
+def _add_arg_init_mode(group: Group, choices: List[str]) -> None:
+    group.add_argument(
+        _switch("init-mode"),
+        choices=choices,
+        help="Initialization mode",
         required=True,
         type=str,
     )
@@ -693,8 +735,10 @@ class _STR:
     file2path: str = "file_2_path"
     forecast: str = "forecast"
     help: str = "help"
+    ics: str = "ics"
     infile: str = "input_file"
     infmt: str = "input_format"
+    init: str = "init"
     keyvalpairs: str = "key_eq_val_pairs"
     mode: str = "mode"
     model: str = "model"

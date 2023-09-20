@@ -274,7 +274,6 @@ class Config(ABC, UserDict):
 
                     # Put the full template line back together as it was, filled or not, and make a
                     # guess on its intended type.
-                    
                     ref_dict[key] = self.reify_scalar_str(v_str)
 
     def dereference_all(self) -> None:
@@ -574,7 +573,7 @@ class YAMLConfig(Config):
 
         start, stop, freq = loader.construct_sequence(node)
         return f"{start} {stop} {freq}"
-        
+
     @property
     def _yaml_loader(self) -> type[yaml.SafeLoader]:
         """
