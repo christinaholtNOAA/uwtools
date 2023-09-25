@@ -36,3 +36,4 @@ def setup_logging(quiet: bool = False, verbose: bool = False) -> None:
         **({"filename": os.devnull} if quiet else {}),
     }
     logging.basicConfig(**kwargs)
+

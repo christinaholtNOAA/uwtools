@@ -328,7 +328,7 @@ def _dispatch_forecast_run(args: Namespace) -> bool:
 
     :param args: Parsed command-line args.
     """
-    forecast_class = uwtools.drivers.forecast.CLASSES[args.forecast_model]
+    forecast_class = uwtools.drivers.forecast.CLASSES[args.model]
     forecast_class(config_file=args.config_file, dry_run=args.dry_run).run(
         cycle=args.cycle,
     )
@@ -591,7 +591,7 @@ def _abort(msg: str) -> None:
 
     :param msg: The message to print.
     """
-    print(msg, file=sys.stderr)
+    logging.exception(msg, file=sys.stderr)
     sys.exit(1)
 
 

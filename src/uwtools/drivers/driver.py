@@ -85,7 +85,7 @@ class Driver(ABC):
         run_cmd = self._platform_config["mpicmd"]
         exec_name = self._config["exec_name"]
         args_str = " ".join(str(arg) for arg in args)
-        return f"{run_cmd} {args_str} {exec_name}"
+        return f"{run_cmd} {args_str} ./{exec_name}"
 
     @property
     def scheduler(self) -> JobScheduler:

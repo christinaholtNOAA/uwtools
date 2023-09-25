@@ -364,7 +364,7 @@ class Config(ABC, UserDict):
         """
         srcdict = src.data if isinstance(src, Config) else src
         dstcfg = self if dst is None else dst
-        for key, new_val in srcdict.items():
+        for key, new_val in srcdict.copy().items():
             if isinstance(new_val, dict):
                 if isinstance(dstcfg.get(key), dict):
                     self.update_values(new_val, dstcfg[key])

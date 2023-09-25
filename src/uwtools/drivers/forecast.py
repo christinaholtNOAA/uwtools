@@ -127,16 +127,23 @@ class Forecast(Driver, ABC):
         self.create_directory_structure(run_dir.as_posix(), "delete")
 
         cycle_dependent_files = self._config.get("cycle-dependent", {})
-        for src, dst in cycle_dependent_files.items():
-            cycle_dependent_files[src] = dst.format(cycle=cycle.strftime("%Y%m%d%H"),
-                    cycle_hr=cycle.strftime("%H"))
+        formatter = lambda x: x.format(cycle=cycle.strftime("%Y%m%d%H"),
+                cycle_hr=cycle.strftime("%H"), cycle_init=cycle.strftime("%Y-%m-%d_%H"),
+                cycle_iso=cycle.strftime("%Y-%m-%d_%H:%M:%S"))
+        for src, dst in cycle_dependent_files.copy().items():
+            formatted_src =  formatter(src)
+            if isinstance(dst, list):
+                cycle_dependent_files[formatted_src] = [formatter(d) for d in dst]
+            else:
+                cycle_dependent_files.pop(src)
+                cycle_dependent_files[formatted_src] = formatter(dst)
 
 
         for file_category in ["static", "cycle-dependent"]:
             self.stage_files(
                 run_directory=run_dir,
                 files_to_stage=self._config.get(file_category, {}),
-                link_files=True
+                link_files=True,
             )
 
         self._prepare_config_files(run_dir)
@@ -156,18 +163,24 @@ class Forecast(Driver, ABC):
             self.scheduler.run_job(outpath)
             return
 
+        runtime_args = self._config.get("runtime_info",{}).get("mpi_args", [])
         if self._dry_run:
             logging.info("Would run: ")
-            logging.info(self.run_cmd())
+            logging.info(self.run_cmd(*runtime_args))
             return
 
         with change_dir(run_dir):
-            subprocess.run(
-                f"{self.run_cmd()}",
-                stderr=subprocess.STDOUT,
-                check=False,
-                shell=True,
-            )
+            logging.info(f"current directory: {os.getcwd()}")
+            try:
+                subprocess.run(
+                    f"{self.run_cmd(*runtime_args)}",
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    shell=True,
+                )
+            except subprocess.CalledProcessError as e:
+                logging.exception(e.output)
+                raise
 
     @property
     def _config(self) -> Mapping:
@@ -345,14 +358,20 @@ class MPASForecast(Forecast):
             config_values=self._config["namelist"],
             output_path=output_path,
         )
+        start_time = self._cycle.strftime("%Y-%m-%d_%H:%M:%S")
         date_values = {
             "nhyd_model": {
-                "config_start_time": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
+                "config_start_time": start_time,
                 },
             }
-        config_obj = YAMLConfig(output_path)
+        logging.info(f"Updating namelist date values to start at: {start_time}")
+        config_obj = NMLConfig(output_path)
         config_obj.update_values(date_values)
         config_obj.dump(output_path)
+
+    @property
+    def schema_file(self) -> str:
+        return ""
 
 class MPASInit(Forecast):
 
@@ -384,22 +403,18 @@ class MPASInit(Forecast):
             config_values=self._config["namelist"],
             output_path=output_path,
         )
+        start_time = self._cycle.strftime("%Y-%m-%d_%H:%M:%S")
         date_values = {
             "nhyd_model": {
-                "config_start_time": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
-                "config_stop_time": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
+                "config_start_time": start_time,
+                "config_stop_time": start_time,
                 },
             }
-        config_obj = YAMLConfig(output_path)
+        logging.info(f"Updating namelist date values to start at: {start_time}")
+        config_obj = NMLConfig(output_path)
         config_obj.update_values(date_values)
         config_obj.dump(output_path)
 
-    @property
-    def _config(self) -> Mapping:
-        """
-        The config object that describes the subset of an experiment config related to the
-        MPAS Init.
-        """
     @property
     def _config(self) -> Mapping:
         """
@@ -452,12 +467,14 @@ class Ungrib(Forecast):
             config_values=self._config["namelist"],
             output_path=output_path,
         )
+        start_time = self._cycle.strftime("%Y-%m-%d_%H:%M:%S")
         date_values = {
             "share": {
-                "start_date": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
-                "end_date": self._cycle.strftime("%Y-%m-%d_%H:%M:%s"),
+                "start_date": start_time,
+                "end_date": start_time,
                 },
             }
+        logging.info(f"Updating namelist date values to start at: {start_time}")
         config_obj = NMLConfig(output_path)
         config_obj.update_values(date_values)
         config_obj.dump(output_path)
