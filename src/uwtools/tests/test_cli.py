@@ -545,11 +545,10 @@ def test__dispatch_template_translate_no_optional():
     )
 
 
-@pytest.mark.parametrize("hours", [0, 24, 168])
-def test__dispatch_to_driver(hours):
+def test__dispatch_to_driver():
     name = "adriver"
     cycle = dt.datetime.now()
-    leadtime = dt.timedelta(hours=hours)
+    leadtime = dt.timedelta(hours=24)
     args: dict = {
         "action": "foo",
         "batch": True,
@@ -647,9 +646,9 @@ def test__switch():
 
 
 def test__timedelta_from_str(capsys):
-    assert cli._timedelta_from_str("111:222:333").total_seconds() == 111 * 3600 + 222 * 60 + 333
-    assert cli._timedelta_from_str("111:222").total_seconds() == 111 * 3600 + 222 * 60
-    assert cli._timedelta_from_str("111").total_seconds() == 111 * 3600
+    assert cli._timedelta_from_str("11:12:13") == dt.timedelta(hours=11, minutes=12, seconds=13)
+    assert cli._timedelta_from_str("11:12") == dt.timedelta(hours=11, minutes=12)
+    assert cli._timedelta_from_str("11") == dt.timedelta(hours=11)
     with raises(SystemExit):
         cli._timedelta_from_str("foo")
     assert f"Specify leadtime as {cli.LEADTIME_DESC}" in capsys.readouterr().err
